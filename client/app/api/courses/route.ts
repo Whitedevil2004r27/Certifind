@@ -3,6 +3,7 @@ import { revalidateTag, unstable_cache } from 'next/cache';
 import { query } from '@/lib/db';
 import { getAppUser, isAdminUser } from '@/lib/current-user';
 import { getFallbackCourses } from '@/lib/fallback-catalog';
+import { normalizeCourseRecord } from '@/lib/course-data';
 
 export const runtime = 'nodejs';
 
@@ -194,13 +195,7 @@ export async function GET(request: Request) {
 
     const totalCount = parseInt(countResult[0].count);
 
-    const courses = dataResult.map((course: any) => ({
-      ...course,
-      platforms: {
-        name: course.platform,
-        category: course.platform_category || 'Global',
-      },
-    }));
+    const courses = dataResult.map((course) => normalizeCourseRecord(course));
 
     return NextResponse.json({
       source: 'neon',

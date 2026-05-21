@@ -1,4 +1,32 @@
 import { neon } from '@neondatabase/serverless';
+import * as dns from 'node:dns';
+
+if (typeof window === 'undefined') {
+  try {
+    const mutableDns = dns as any;
+    mutableDns.setServers(['8.8.8.8', '8.8.4.4']);
+    const originalLookup = mutableDns.lookup;
+    mutableDns.lookup = function (hostname: string, options: any, callback: any) {
+      if (typeof options === 'function') {
+        callback = options;
+        options = {};
+      }
+      if (hostname && hostname.endsWith('neon.tech')) {
+        dns.resolve(hostname, (err: any, addresses: string[]) => {
+          if (err || !addresses || !addresses.length) {
+            return originalLookup(hostname, options, callback);
+          }
+          callback(null, addresses[0], 4);
+        });
+      } else {
+        originalLookup(hostname, options, callback);
+      }
+    };
+    console.log('🌐 Client DNS Lookup monkey-patched to bypass local resolution issues for neon.tech');
+  } catch (e) {
+    console.warn('⚠️ Failed to configure client DNS monkey-patch:', e);
+  }
+}
 
 type NeonSqlClient = ReturnType<typeof neon>;
 

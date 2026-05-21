@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { query } from '@/lib/db';
 import { getFallbackCourseById } from '@/lib/fallback-catalog';
+import { normalizeCourseRecord } from '@/lib/course-data';
 
 export const runtime = 'nodejs';
 
@@ -58,13 +59,7 @@ export async function GET(
       return NextResponse.json({ error: 'Course not found' }, { status: 404 });
     }
 
-    const course = result[0];
-    course.platforms = {
-      name: course.platform,
-      category: course.platform_category || 'Global',
-    };
-
-    return NextResponse.json(course, {
+    return NextResponse.json(normalizeCourseRecord(result[0]), {
       headers: {
         'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
       },

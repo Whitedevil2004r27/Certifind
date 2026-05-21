@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { getAppUser } from '@/lib/current-user';
+import { normalizeCourseRecord } from '@/lib/course-data';
 
 export const runtime = 'nodejs';
 
@@ -67,13 +68,7 @@ export async function GET(request: Request) {
       [user.id]
     );
 
-    return NextResponse.json(bookmarks.map((course: any) => ({
-      ...course,
-      platforms: {
-        name: course.platform,
-        category: course.platform_category || 'Global',
-      },
-    })));
+    return NextResponse.json(bookmarks.map((course: any) => normalizeCourseRecord(course)));
   } catch (err: any) {
     console.error('Bookmarks API error:', err);
     return NextResponse.json(

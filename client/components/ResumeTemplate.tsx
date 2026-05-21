@@ -22,11 +22,16 @@ interface ResumeData {
     year: string;
   }[];
 }
-
-export default function ResumeTemplate({ data }: { data: ResumeData }) {
+export default function ResumeTemplate({
+  data,
+  elementId = "resume-content",
+}: {
+  data: ResumeData;
+  elementId?: string;
+}) {
   return (
     <div 
-      id="resume-content"
+      id={elementId}
       className="bg-white text-black p-12 w-[800px] min-h-[1132px] font-sans shadow-2xl mx-auto"
       style={{ boxSizing: 'border-box' }}
     >
@@ -102,7 +107,7 @@ export default function ResumeTemplate({ data }: { data: ResumeData }) {
                   <ul className="space-y-1.5">
                     {exp.description.map((desc, j) => (
                       <li key={j} className="text-xs text-gray-600 leading-relaxed font-medium">
-                        • {desc}
+                        - {desc}
                       </li>
                     ))}
                   </ul>

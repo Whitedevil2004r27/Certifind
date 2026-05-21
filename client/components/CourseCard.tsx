@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { Star, Clock, BarChart, Bookmark, ExternalLink, Trophy, BadgeCheck } from 'lucide-react'
 import PlatformBadge from './PlatformBadge'
 import { usePathname, useRouter } from 'next/navigation'
+import { toFiniteInteger, toFiniteNumber } from '@/lib/course-data'
 
 export interface Course {
   course_id: string
@@ -18,12 +19,12 @@ export interface Course {
   }
   department: string
   course_type: string
-  price: number
-  original_price?: number
-  discount_percentage?: number
-  rating: number
-  total_ratings: number
-  duration_hours?: number
+  price: number | string | null
+  original_price?: number | string | null
+  discount_percentage?: number | string | null
+  rating: number | string | null
+  total_ratings: number | string | null
+  duration_hours?: number | string | null
   level: string
   thumbnail_url?: string
   image_alt?: string
@@ -111,20 +112,24 @@ const CourseCard: React.FC<CourseCardProps> = ({ course, isBookmarked: externalB
     }
   }, [course.course_id, onBookmarkToggle, pathname, router])
 
+  const rating = toFiniteNumber(course.rating)
+  const totalRatings = toFiniteInteger(course.total_ratings)
+  const durationHours = toFiniteNumber(course.duration_hours)
+  const price = toFiniteNumber(course.price)
+  const originalPrice = toFiniteNumber(course.original_price)
+  const discountPercentage = toFiniteNumber(course.discount_percentage)
+
   const ratingStars = useMemo(
     () =>
       Array.from({ length: 5 }, (_, i) => (
         <Star
           key={i}
           size={14}
-          className={i < Math.floor(course.rating) ? 'fill-amber-400 text-amber-400' : 'text-neutral-600'}
+          className={i < Math.floor(rating) ? 'fill-amber-400 text-amber-400' : 'text-neutral-600'}
         />
       )),
-    [course.rating]
+    [rating]
   )
-  const price = Number(course.price || 0)
-  const originalPrice = Number(course.original_price || 0)
-  const discountPercentage = Number(course.discount_percentage || 0)
   const shortDescription =
     course.description?.trim() ||
     `${course.department} course from ${course.platform} with practical lessons and portfolio-ready outcomes.`
@@ -193,7 +198,7 @@ const CourseCard: React.FC<CourseCardProps> = ({ course, isBookmarked: externalB
           <div className="flex items-center gap-1">
             {ratingStars}
           </div>
-          <span className="text-xs font-bold text-amber-300/85">({course.total_ratings.toLocaleString()})</span>
+          <span className="text-xs font-bold text-amber-300/85">({totalRatings.toLocaleString()})</span>
         </div>
 
         <h3 className="mb-2 min-h-[44px] text-lg font-black leading-tight tracking-tight text-white transition-colors group-hover:text-certifind-accent">
@@ -207,7 +212,7 @@ const CourseCard: React.FC<CourseCardProps> = ({ course, isBookmarked: externalB
         <div className="mb-5 grid grid-cols-2 gap-3 border-t border-white/5 pt-4">
           <div className="flex items-center gap-2 text-neutral-500">
             <Clock size={14} />
-            <span className="text-xs font-medium">{course.duration_hours?.toFixed(1) || '0'} hrs</span>
+            <span className="text-xs font-medium">{durationHours.toFixed(1)} hrs</span>
           </div>
           <div className="flex items-center gap-2 text-neutral-500">
             <BarChart size={14} />

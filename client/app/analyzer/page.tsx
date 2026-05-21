@@ -6,48 +6,115 @@ import RoadmapStep from "@/components/RoadmapStep";
 import ResumeTemplate from "@/components/ResumeTemplate";
 import { generateResumePDF } from "@/lib/pdf-generator";
 
+type ResumeData = {
+  fullName: string;
+  email: string;
+  phone: string;
+  location: string;
+  skills: string[];
+  experience: {
+    company: string;
+    role: string;
+    period: string;
+    description: string[];
+  }[];
+  education: {
+    school: string;
+    degree: string;
+    year: string;
+  }[];
+};
+
+type AnalyzerRecommendation = {
+  course_id: string;
+  title: string;
+  department: string;
+  rating: number;
+  level: string;
+  newSkillsCount: number;
+  phaseTitle?: string;
+  platforms?: {
+    name: string;
+    category: string;
+  };
+};
+
+type AnalyzerResult = {
+  detectedSkills: string[];
+  recommendations: AnalyzerRecommendation[];
+  summary: string;
+  source?: string;
+};
+
+const MAX_RESUME_SIZE_BYTES = 5 * 1024 * 1024;
+const RESUME_EXPORT_ID = "resume-export-content";
+
+const defaultResumeData: ResumeData = {
+  fullName: "Career Scholar",
+  email: "scholar@certifind.ai",
+  phone: "+1 (555) CERT-AI",
+  location: "Global Digital Hub",
+  skills: ["AI Strategy", "Full-Stack Development", "Technical Architecture"],
+  experience: [
+    {
+      company: "CertiFind AI Labs",
+      role: "Senior Skill Architect",
+      period: "2023 - Present",
+      description: ["Designing automated career roadmap algorithms", "Implementing serverless PDF parsing engines"],
+    },
+  ],
+  education: [
+    {
+      school: "CertiFind Academy",
+      degree: "Master of Continuous Learning",
+      year: "2024",
+    },
+  ],
+};
+
+function validateResumeFile(candidate: File | null) {
+  if (!candidate) return "Please choose a resume PDF first.";
+  const isPdf = candidate.type === "application/pdf" || candidate.name.toLowerCase().endsWith(".pdf");
+  if (!isPdf) return "Only PDF resume files are supported.";
+  if (candidate.size > MAX_RESUME_SIZE_BYTES) return "Resume file must be 5MB or smaller.";
+  return "";
+}
+
 export default function AnalyzerPage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<AnalyzerResult | null>(null);
   const [error, setError] = useState("");
   const [showPreview, setShowPreview] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  // Mock Resume Data for the Generator (In a real app, this would be partially parsed from the PDF)
-  const [resumeData, setResumeData] = useState({
-    fullName: "Career Scholar",
-    email: "scholar@certifind.ai",
-    phone: "+1 (555) CERT-AI",
-    location: "Global Digital Hub",
-    skills: ["AI Strategy", "Full-Stack Development", "Technical Architecture"],
-    experience: [
-      {
-        company: "CertiFind AI Labs",
-        role: "Senior Skill Architect",
-        period: "2023 - Present",
-        description: ["Designing automated career roadmap algorithms", "Implementing serverless PDF parsing engines"]
-      }
-    ],
-    education: [
-      {
-        school: "CertiFind Academy",
-        degree: "Master of Continuous Learning",
-        year: "2024"
-      }
-    ]
-  });
+  const [resumeData, setResumeData] = useState<ResumeData>(defaultResumeData);
+
+  const updateSelectedFile = (candidate: File | null) => {
+    const validationError = validateResumeFile(candidate);
+    setError(validationError);
+    setFile(validationError ? null : candidate);
+  };
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) return;
+    if (!file) {
+      setError("Please choose a resume PDF first.");
+      return;
+    }
+    const validationError = validateResumeFile(file);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    const resumeFile: File = file;
 
     setLoading(true);
     setError("");
     setResult(null);
 
     const formData = new FormData();
-    formData.append("resume", file);
+    formData.append("resume", resumeFile);
 
     try {
       const res = await fetch("/api/analyze", {
@@ -59,16 +126,18 @@ export default function AnalyzerPage() {
         const errData = await res.json();
         throw new Error(errData.details || errData.error || "Analysis failed. Please ensure the file is a valid PDF.");
       }
-      const data = await res.json();
+      const data = (await res.json()) as AnalyzerResult;
+      if (!Array.isArray(data.recommendations) || data.recommendations.length === 0) {
+        throw new Error("No course recommendations were returned. Please try another resume.");
+      }
       setResult(data);
       
-      // Update Resume Data with detected skills
       setResumeData(prev => ({
         ...prev,
-        skills: [...prev.skills, ...data.detectedSkills].slice(0, 12)
+        skills: Array.from(new Set([...prev.skills, ...(data.detectedSkills || [])])).slice(0, 12)
       }));
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Analysis failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -76,10 +145,11 @@ export default function AnalyzerPage() {
 
   const handleExport = async () => {
     setExporting(true);
-    const success = await generateResumePDF("resume-content", `${resumeData.fullName}_CertiFind_Resume.pdf`);
+    setError("");
+    const success = await generateResumePDF(RESUME_EXPORT_ID, `${resumeData.fullName}_CertiFind_Resume.pdf`);
     setExporting(false);
-    if (success) {
-      // Optional: Show success toast
+    if (!success) {
+      setError("Resume export failed. Please open the preview and try again.");
     }
   };
 
@@ -108,13 +178,13 @@ export default function AnalyzerPage() {
           <div className="bg-neutral-900/40 border border-white/5 backdrop-blur-3xl rounded-[2rem] p-5 sm:p-8 md:p-16 shadow-2xl relative overflow-hidden group">
             <form onSubmit={handleUpload} className="space-y-10">
               <div 
-                className={`border-2 border-dashed rounded-[2rem] p-12 text-center transition-all duration-500 cursor-pointer flex flex-col items-center gap-6 ${
+                className={`border-2 border-dashed rounded-[2rem] p-6 text-center transition-all duration-500 cursor-pointer flex flex-col items-center gap-5 sm:p-10 md:p-12 md:gap-6 ${
                   file ? "border-emerald-500/50 bg-emerald-500/5" : "border-white/10 hover:border-certifind-accent/50 hover:bg-white/5"
                 }`}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault();
-                  if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+                  updateSelectedFile(e.dataTransfer.files[0] || null);
                 }}
               >
                 <div className={`w-20 h-20 rounded-2xl flex items-center justify-center transition-all duration-500 ${
@@ -125,11 +195,11 @@ export default function AnalyzerPage() {
                 
                 <input 
                   type="file" accept=".pdf" className="hidden" id="resume-upload"
-                  onChange={(e) => e.target.files?.[0] && setFile(e.target.files[0])}
+                  onChange={(e) => updateSelectedFile(e.target.files?.[0] || null)}
                 />
                 <label htmlFor="resume-upload" className="cursor-pointer">
-                  <h3 className="text-2xl font-bold text-white mb-2">{file ? file.name : "Select your Resume"}</h3>
-                  <p className="text-neutral-500 font-medium">Drag and drop or click to browse. Supports PDF (Max 5MB).</p>
+                  <h3 className="mb-2 break-all text-xl font-bold text-white sm:text-2xl">{file ? file.name : "Select your Resume"}</h3>
+                  <p className="text-sm font-medium leading-relaxed text-neutral-500 sm:text-base">Drag and drop or click to browse. Supports PDF (Max 5MB).</p>
                 </label>
               </div>
 
@@ -176,44 +246,50 @@ export default function AnalyzerPage() {
                     </button>
                   </div>
                   <div className="overflow-x-auto">
-                    <ResumeTemplate data={resumeData} />
+                    <ResumeTemplate data={resumeData} elementId="resume-preview-content" />
                   </div>
                 </div>
               </div>
             )}
 
             {/* Analysis Results Card */}
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-[2.5rem] p-8 md:p-12 backdrop-blur-xl">
-              <div className="flex flex-col md:flex-row items-center gap-8 justify-between">
+            {error && <div className="bg-rose-500/10 border border-rose-500/20 text-rose-300 px-6 py-4 rounded-2xl text-sm font-bold">Error: {error}</div>}
+
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-[2rem] p-5 backdrop-blur-xl sm:p-8 md:rounded-[2.5rem] md:p-12">
+              <div className="flex flex-col items-center gap-8 justify-between md:flex-row">
                 <div className="text-center md:text-left">
-                  <h3 className="text-3xl font-black text-white mb-4">Profile Updated!</h3>
-                  <p className="text-neutral-300 max-w-xl text-lg leading-relaxed">{result.summary}</p>
+                  <h3 className="mb-4 text-2xl font-black text-white sm:text-3xl">Profile Updated!</h3>
+                  <p className="max-w-xl text-sm leading-relaxed text-neutral-300 sm:text-base lg:text-lg">{result.summary}</p>
                 </div>
                 <div className="flex flex-wrap gap-2 justify-center">
-                  {result.detectedSkills.map((skill: string) => (
+                  {result.detectedSkills.length > 0 ? result.detectedSkills.map((skill) => (
                     <span key={skill} className="bg-emerald-500/20 text-emerald-400 px-4 py-2 rounded-full text-sm font-bold uppercase tracking-wider border border-emerald-500/30 font-black">
                       {skill}
                     </span>
-                  ))}
+                  )) : (
+                    <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-wider text-neutral-300">
+                      Discovery mode
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Course Recommendations / Roadmap */}
             <div className="relative pt-10">
-              <div className="flex items-center gap-4 mb-16 justify-center">
-                <div className="w-12 h-12 rounded-2xl bg-certifind-accent/20 flex items-center justify-center border border-certifind-accent/30 shadow-[0_0_20px_rgba(114,38,255,0.2)]">
+              <div className="mb-10 flex flex-col items-center justify-center gap-4 text-center sm:mb-16 sm:flex-row sm:text-left">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-certifind-accent/30 bg-certifind-accent/20 shadow-[0_0_20px_rgba(114,38,255,0.2)]">
                   <TrendingUp className="w-6 h-6 text-certifind-accent" />
                 </div>
                 <div>
-                  <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">AI Roadmap <span className="text-certifind-accent">V2.0</span></h2>
-                  <p className="text-neutral-500 font-bold text-sm tracking-widest uppercase">3-Stage Career Acceleration Plan</p>
+                  <h2 className="text-2xl font-black tracking-tight text-white sm:text-4xl">AI Roadmap <span className="text-certifind-accent">V2.0</span></h2>
+                  <p className="text-xs font-bold uppercase tracking-widest text-neutral-500 sm:text-sm">3-Stage Career Acceleration Plan</p>
                 </div>
               </div>
 
               <div className="relative">
                 <div className="space-y-4">
-                  {result.recommendations.map((course: any, idx: number) => (
+                  {result.recommendations.map((course, idx) => (
                     <RoadmapStep 
                       key={course.course_id}
                       index={idx}
@@ -227,7 +303,7 @@ export default function AnalyzerPage() {
 
             <div className="text-center pt-20">
               <button 
-                onClick={() => { setResult(null); setFile(null); }}
+                onClick={() => { setResult(null); setFile(null); setError(""); setResumeData(defaultResumeData); }}
                 className="text-neutral-500 hover:text-white font-black uppercase tracking-[0.2em] text-[10px] transition-all flex items-center gap-3 mx-auto px-6 py-2 rounded-full border border-white/5 hover:border-white/10 bg-white/5"
               >
                 <X className="w-3 h-3" /> Start New Analysis
@@ -238,8 +314,8 @@ export default function AnalyzerPage() {
       </div>
       
       {/* Hidden container for PDF generation */}
-      <div className="hidden">
-        <ResumeTemplate data={resumeData} />
+      <div className="fixed left-[-10000px] top-0 w-[800px] pointer-events-none" aria-hidden="true">
+        <ResumeTemplate data={resumeData} elementId={RESUME_EXPORT_ID} />
       </div>
     </div>
   );

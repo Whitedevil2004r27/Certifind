@@ -7,10 +7,12 @@ export const generateResumePDF = async (elementId: string, filename: string = 'M
   const element = document.getElementById(elementId);
   if (!element) {
     console.error('Resume element not found');
-    return;
+    return false;
   }
 
   try {
+    await document.fonts?.ready;
+
     // 1. Capture the element as a high-resolution canvas
     const canvas = await html2canvas(element, {
       scale: 2, // Higher resolution for printing

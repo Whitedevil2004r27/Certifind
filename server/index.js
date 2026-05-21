@@ -1,4 +1,28 @@
 require('dotenv').config();
+const dns = require('dns');
+try {
+  dns.setServers(['8.8.8.8', '8.8.4.4']);
+  const originalLookup = dns.lookup;
+  dns.lookup = function(hostname, options, callback) {
+    if (typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+    if (hostname && hostname.endsWith('neon.tech')) {
+      dns.resolve(hostname, (err, addresses) => {
+        if (err || !addresses || !addresses.length) {
+          return originalLookup(hostname, options, callback);
+        }
+        callback(null, addresses[0], 4);
+      });
+    } else {
+      originalLookup(hostname, options, callback);
+    }
+  };
+  console.log('🌐 DNS Lookup monkey-patched to bypass local resolution issues for neon.tech');
+} catch (e) {
+  console.warn('⚠️ Failed to configure DNS monkey-patch:', e);
+}
 const express = require('express');
 const cors = require('cors');
 
