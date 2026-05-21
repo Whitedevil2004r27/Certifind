@@ -1,31 +1,99 @@
-import { neon } from '@neondatabase/serverless';
+import { neon, neonConfig } from '@neondatabase/serverless';
 import * as dns from 'node:dns';
+import type { IncomingHttpHeaders } from 'node:http';
+import { Resolver } from 'node:dns/promises';
+import * as https from 'node:https';
 
 if (typeof window === 'undefined') {
   try {
-    const mutableDns = dns as any;
-    mutableDns.setServers(['8.8.8.8', '8.8.4.4']);
-    const originalLookup = mutableDns.lookup;
-    mutableDns.lookup = function (hostname: string, options: any, callback: any) {
-      if (typeof options === 'function') {
-        callback = options;
-        options = {};
-      }
-      if (hostname && hostname.endsWith('neon.tech')) {
-        dns.resolve(hostname, (err: any, addresses: string[]) => {
-          if (err || !addresses || !addresses.length) {
-            return originalLookup(hostname, options, callback);
-          }
-          callback(null, addresses[0], 4);
-        });
-      } else {
-        originalLookup(hostname, options, callback);
-      }
-    };
-    console.log('🌐 Client DNS Lookup monkey-patched to bypass local resolution issues for neon.tech');
+    neonConfig.fetchFunction = createNeonDnsFetch();
   } catch (e) {
-    console.warn('⚠️ Failed to configure client DNS monkey-patch:', e);
+    console.warn('Failed to configure client Neon DNS fallback:', e);
   }
+}
+
+function createNeonDnsFetch() {
+  const resolver = new Resolver();
+  resolver.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+
+  return async function neonDnsFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+    const request = typeof Request !== 'undefined' && input instanceof Request ? input : null;
+    const target = new URL(request ? request.url : input.toString());
+    const headers = new Headers(request?.headers);
+    new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+    const body =
+      init.body !== undefined
+        ? init.body
+        : request
+          ? Buffer.from(await request.arrayBuffer())
+          : undefined;
+
+    return new Promise<Response>((resolve, reject) => {
+      const req = https.request(
+        {
+          protocol: target.protocol,
+          hostname: target.hostname,
+          port: target.port || 443,
+          path: `${target.pathname}${target.search}`,
+          method: init.method || request?.method || 'GET',
+          headers: Object.fromEntries(headers),
+          lookup(hostname, options, callback) {
+            resolver
+              .resolve4(hostname)
+              .then((addresses) => {
+                if (!addresses.length) {
+                  throw new Error(`No A records found for ${hostname}`);
+                }
+
+                if (options?.all) {
+                  callback(
+                    null,
+                    addresses.map((address) => ({ address, family: 4 }))
+                  );
+                  return;
+                }
+
+                callback(null, addresses[0], 4);
+              })
+              .catch(() => {
+                (dns.lookup as any)(hostname, options, callback);
+              });
+          },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+          res.on('end', () => {
+            resolve(
+              new Response(Buffer.concat(chunks), {
+                status: res.statusCode || 500,
+                statusText: res.statusMessage,
+                headers: toResponseHeaders(res.headers),
+              })
+            );
+          });
+        }
+      );
+
+      req.on('error', reject);
+      if (body) req.write(body as any);
+      req.end();
+    });
+  };
+}
+
+function toResponseHeaders(headers: IncomingHttpHeaders) {
+  const responseHeaders = new Headers();
+
+  Object.entries(headers).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => responseHeaders.append(key, entry));
+    } else if (value !== undefined) {
+      responseHeaders.set(key, String(value));
+    }
+  });
+
+  return responseHeaders;
 }
 
 type NeonSqlClient = ReturnType<typeof neon>;
